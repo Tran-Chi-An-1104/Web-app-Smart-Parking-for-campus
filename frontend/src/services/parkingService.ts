@@ -19,11 +19,7 @@ type ClusterConfig = {
   codeStart: number;
 };
 
-// 4 cụm dọc, mỗi cụm 30 slot
-// A = 30 (2 cột x 15 hàng)
-// B = 30 (2 cột x 15 hàng)
-// C = 30 (2 cột x 15 hàng)
-// D = 30 (2 cột x 15 hàng)
+// 120 slot xe máy hiện tại + 40 slot ô tô mới ở phía dưới
 const clusterConfigs: ClusterConfig[] = [
   {
     block: "A",
@@ -76,6 +72,19 @@ const clusterConfigs: ClusterConfig[] = [
     gapX: 14,
     gapY: 9,
     codeStart: 91,
+  },
+  {
+    block: "E",
+    sector: "Car Zone",
+    startX: 352,
+    startY: 675,
+    columns: 5,
+    rows: 2,
+    slotWidth: 56,
+    slotHeight: 32,
+    gapX: 54,
+    gapY: 90,
+    codeStart: 121,
   },
 ];
 
@@ -146,7 +155,9 @@ export function createParkingSlots(): ParkingSlot[] {
         const isAvailable = (row + col + clusterIndex) % 4 === 0;
         const durationMinutes = isAvailable
           ? 0
-          : durationSeed[(row + col * 2 + clusterIndex * 3) % durationSeed.length];
+          : durationSeed[
+              (row + col * 2 + clusterIndex * 3) % durationSeed.length
+            ];
 
         const slot: ParkingSlot = {
           id: `slot-${idCount}`,
@@ -180,7 +191,7 @@ export function filterSlots(
   duration: string
 ): ParkingSlot[] {
   return slots.filter((slot) => {
-    const sectorMatch = sector === "All sectors" || slot.sector === sector;
+    const sectorMatch = sector === "All Zones" || slot.sector === sector;
     const durationMatch =
       duration === "All durations" || toDurationBucket(slot) === duration;
 

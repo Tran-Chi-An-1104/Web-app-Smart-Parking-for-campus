@@ -17,12 +17,12 @@ export function FilterBar({
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark">●</span>
-        <span>GGMU</span>
+        <span>Smart traffic dashboard</span>
       </div>
 
       <div className="topbar-actions">
         <label className="filter-chip">
-          <span>Sector</span>
+          <span>Zone</span>
           <select
             value={sector}
             onChange={(event) => onSectorChange(event.target.value)}
@@ -49,7 +49,7 @@ export function FilterBar({
           </select>
         </label>
 
-        <div className="version-pill">v75</div>
+        <div className="version-pill">version 1.0</div>
       </div>
     </header>
   );

@@ -1,11 +1,12 @@
 import type { FilterState } from "../types/parking";
 
 export const sectorOptions = [
-  "All sectors",
-  "Sector 1",
-  "Sector 2",
-  "Sector 3",
-  "Sector 4",
+  "All Zones",
+  "Zone A",
+  "Zone B",
+  "Zone C",
+  "Zone D",
+  "Car Zone",
 ];
 
 export const durationOptions = [
@@ -19,6 +20,6 @@ export const durationOptions = [
 ];
 
 export const defaultFilters: FilterState = {
-  sector: "All sectors",
+  sector: "All Zones",
   duration: "All durations",
 };
