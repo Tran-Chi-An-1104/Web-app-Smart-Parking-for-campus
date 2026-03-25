@@ -89,18 +89,19 @@ const clusterConfigs: ClusterConfig[] = [
 ];
 
 const durationSeed = [4, 8, 12, 17, 24, 39, 58, 85, 120, 168, 220, 280];
+const sinceLabelFormatter = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
 
 function buildSinceLabel(durationMinutes: number): string {
   const date = new Date(Date.now() - durationMinutes * 60 * 1000);
 
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+  return sinceLabelFormatter.format(date);
 }
 
 export function toDurationBucket(slot: ParkingSlot): DurationBucket {
@@ -144,7 +145,7 @@ export function formatDurationCompact(minutes: number): string {
   return `${hour}h ${min}m`;
 }
 
-export function createParkingSlots(): ParkingSlot[] {
+function buildParkingSlots(): ParkingSlot[] {
   const slots: ParkingSlot[] = [];
   let idCount = 1;
 
@@ -185,6 +186,22 @@ export function createParkingSlots(): ParkingSlot[] {
   return slots;
 }
 
+export const parkingSlots: ParkingSlot[] = buildParkingSlots().map(
+  (slot, index) => ({
+    ...slot,
+    code: String(index + 1),
+  })
+);
+
+export const userParkingSlots: ParkingSlot[] = parkingSlots.map((slot) => ({
+  ...slot,
+  marker: slot.status === "available" ? "green" : "red",
+}));
+
+export function createParkingSlots(): ParkingSlot[] {
+  return parkingSlots;
+}
+
 export function filterSlots(
   slots: ParkingSlot[],
   sector: string,
@@ -201,27 +218,6 @@ export function filterSlots(
 
 export function createSummary(slots: ParkingSlot[]): ParkingSummary {
   const total = slots.length;
-  const available = slots.filter((slot) => slot.status === "available").length;
-  const occupied = total - available;
-  const occupancyRate = total === 0 ? 0 : Math.round((occupied / total) * 100);
-
-  const occupiedDurations = slots
-    .filter((slot) => slot.status === "occupied")
-    .map((slot) => slot.durationMinutes)
-    .sort((a, b) => a - b);
-
-  let medianVisitMinutes = 0;
-
-  if (occupiedDurations.length > 0) {
-    const middle = Math.floor(occupiedDurations.length / 2);
-    medianVisitMinutes =
-      occupiedDurations.length % 2 === 0
-        ? Math.round(
-            (occupiedDurations[middle - 1] + occupiedDurations[middle]) / 2
-          )
-        : occupiedDurations[middle];
-  }
-
   const byDuration: ParkingSummary["byDuration"] = {
     available: 0,
     "< 5 min": 0,
@@ -231,16 +227,22 @@ export function createSummary(slots: ParkingSlot[]): ParkingSummary {
     "> 3 hours": 0,
   };
 
-  slots.forEach((slot) => {
-    byDuration[toDurationBucket(slot)] += 1;
-  });
-
+  let available = 0;
+  const occupiedDurations: number[] = [];
   const sectorMap = new Map<
     string,
     { sector: string; total: number; available: number; occupied: number }
   >();
 
   slots.forEach((slot) => {
+    if (slot.status === "available") {
+      available += 1;
+    } else {
+      occupiedDurations.push(slot.durationMinutes);
+    }
+
+    byDuration[toDurationBucket(slot)] += 1;
+
     const current = sectorMap.get(slot.sector) ?? {
       sector: slot.sector,
       total: 0,
@@ -254,6 +256,23 @@ export function createSummary(slots: ParkingSlot[]): ParkingSummary {
 
     sectorMap.set(slot.sector, current);
   });
+
+  const occupied = total - available;
+  const occupancyRate = total === 0 ? 0 : Math.round((occupied / total) * 100);
+
+  occupiedDurations.sort((a, b) => a - b);
+
+  let medianVisitMinutes = 0;
+
+  if (occupiedDurations.length > 0) {
+    const middle = Math.floor(occupiedDurations.length / 2);
+    medianVisitMinutes =
+      occupiedDurations.length % 2 === 0
+        ? Math.round(
+            (occupiedDurations[middle - 1] + occupiedDurations[middle]) / 2
+          )
+        : occupiedDurations[middle];
+  }
 
   const bySector = Array.from(sectorMap.values()).sort((a, b) =>
     a.sector.localeCompare(b.sector)

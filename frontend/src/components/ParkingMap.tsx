@@ -1,19 +1,33 @@
 import {
+  memo,
+  startTransition,
+  useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import type { ParkingSlot } from "../types/parking";
 import { markerPalette } from "../assets/parkingPalette";
+import type { MarkerColor, ParkingSlot } from "../types/parking";
 import { SlotDetailCard } from "./SlotDetailCard";
+import { UserSlotDetailCard } from "./UserSlotDetailCard";
+
+export type ParkingMapMode = "admin" | "user";
 
 interface ParkingMapProps {
+  mode: ParkingMapMode;
   slots: ParkingSlot[];
   selectedSlot: ParkingSlot | null;
   onSelectSlot: (id: string | null) => void;
+}
+
+interface ParkingSlotGroupProps {
+  slot: ParkingSlot;
+  isSelected: boolean;
+  isDragging: boolean;
+  onHoverSlot: (id: string | null) => void;
 }
 
 const SLOT_VERTICAL_OFFSET = 40;
@@ -21,35 +35,140 @@ const MAP_WIDTH = 1200;
 const MAP_HEIGHT = 1040;
 const MAP_CENTER_X = MAP_WIDTH / 2;
 const MAP_CENTER_Y = MAP_HEIGHT / 2;
-
 const MIN_SCALE = 1;
 const MAX_SCALE = 2.5;
+
+const mapContent: Record<
+  ParkingMapMode,
+  {
+    title: string;
+    subtitle: string;
+    ariaLabel: string;
+    legend: Array<{ color: MarkerColor; label: string }>;
+    detailHeight: number;
+  }
+> = {
+  admin: {
+    title: "Parking map",
+    subtitle: "Live occupancy view",
+    ariaLabel: "Smart parking map",
+    legend: [
+      { color: "green", label: "available" },
+      { color: "yellow", label: "< 15 min" },
+      { color: "orange", label: "15 min - 3 hours" },
+      { color: "red", label: "> 3 hours" },
+    ],
+    detailHeight: 240,
+  },
+  user: {
+    title: "Parking availability map",
+    subtitle: "Check whether each slot is free or occupied",
+    ariaLabel: "User parking availability map",
+    legend: [
+      { color: "green", label: "available" },
+      { color: "red", label: "occupied" },
+    ],
+    detailHeight: 200,
+  },
+};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+const StaticMapLayer = memo(function StaticMapLayer() {
+  return (
+    <image
+      href="/parking-map-base.svg"
+      x="0"
+      y="0"
+      width={MAP_WIDTH}
+      height={MAP_HEIGHT}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    />
+  );
+});
+
+const ParkingSlotGroup = memo(
+  function ParkingSlotGroup({
+    slot,
+    isSelected,
+    isDragging,
+    onHoverSlot,
+  }: ParkingSlotGroupProps) {
+    return (
+      <g
+        data-slot-id={slot.id}
+        className={`slot-group ${isSelected ? "is-selected" : ""}`}
+        transform={`translate(${slot.x} ${slot.y})`}
+        onMouseEnter={() => {
+          if (!isDragging) onHoverSlot(slot.id);
+        }}
+        onMouseLeave={() => {
+          if (!isDragging) onHoverSlot(null);
+        }}
+      >
+        <rect
+          x="0"
+          y="0"
+          rx="4"
+          ry="4"
+          width={slot.width}
+          height={slot.height}
+          fill={isSelected ? "#d9ebff" : "#b9cde0"}
+          stroke={isSelected ? "#2d4d6e" : "#6f8aa3"}
+          strokeWidth={isSelected ? 1.8 : 1}
+        />
+
+        <circle
+          cx={slot.width - 7}
+          cy={slot.height / 2}
+          r="4.8"
+          fill={markerPalette[slot.marker]}
+          stroke="#475569"
+          strokeWidth="0.6"
+        />
+
+        <text x="5" y={slot.height / 2 + 3.1} className="slot-code">
+          {slot.code}
+        </text>
+      </g>
+    );
+  },
+  (prevProps, nextProps) =>
+    prevProps.slot === nextProps.slot &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.isDragging === nextProps.isDragging
+);
+
 export function ParkingMap({
+  mode,
   slots,
   selectedSlot,
   onSelectSlot,
 }: ParkingMapProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
 
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [tooltipStyle, setTooltipStyle] = useState<CSSProperties | undefined>();
 
   const scaleRef = useRef(scale);
   const panRef = useRef(pan);
+  const panFrameRef = useRef<number | null>(null);
+  const pendingPanRef = useRef<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{
     startX: number;
     startY: number;
     originX: number;
     originY: number;
   } | null>(null);
+
+  const selectedSlotId = selectedSlot?.id ?? null;
+  const content = mapContent[mode];
 
   useEffect(() => {
     scaleRef.current = scale;
@@ -59,39 +178,72 @@ export function ParkingMap({
     panRef.current = pan;
   }, [pan]);
 
-  const resetView = () => {
+  const setPanImmediate = useCallback((nextPan: { x: number; y: number }) => {
+    panRef.current = nextPan;
+    setPan(nextPan);
+  }, []);
+
+  const schedulePanUpdate = useCallback(
+    (nextPan: { x: number; y: number }) => {
+      pendingPanRef.current = nextPan;
+
+      if (panFrameRef.current !== null) return;
+
+      panFrameRef.current = window.requestAnimationFrame(() => {
+        panFrameRef.current = null;
+
+        if (!pendingPanRef.current) return;
+
+        setPanImmediate(pendingPanRef.current);
+        pendingPanRef.current = null;
+      });
+    },
+    [setPanImmediate]
+  );
+
+  const resetView = useCallback(() => {
+    if (panFrameRef.current !== null) {
+      window.cancelAnimationFrame(panFrameRef.current);
+      panFrameRef.current = null;
+    }
+
+    pendingPanRef.current = null;
+    scaleRef.current = 1;
     setScale(1);
-    setPan({ x: 0, y: 0 });
-  };
+    setPanImmediate({ x: 0, y: 0 });
+  }, [setPanImmediate]);
 
-  const zoomAt = (clientX: number, clientY: number, zoomFactor: number) => {
-    if (!svgRef.current) return;
+  const zoomAt = useCallback(
+    (clientX: number, clientY: number, zoomFactor: number) => {
+      if (!svgRef.current) return;
 
-    const rect = svgRef.current.getBoundingClientRect();
-    const mouseX = ((clientX - rect.left) / rect.width) * MAP_WIDTH;
-    const mouseY = ((clientY - rect.top) / rect.height) * MAP_HEIGHT;
+      const rect = svgRef.current.getBoundingClientRect();
+      const mouseX = ((clientX - rect.left) / rect.width) * MAP_WIDTH;
+      const mouseY = ((clientY - rect.top) / rect.height) * MAP_HEIGHT;
+      const currentScale = scaleRef.current;
+      const currentPan = panRef.current;
+      const nextScale = clamp(currentScale * zoomFactor, MIN_SCALE, MAX_SCALE);
 
-    const currentScale = scaleRef.current;
-    const currentPan = panRef.current;
-    const nextScale = clamp(currentScale * zoomFactor, MIN_SCALE, MAX_SCALE);
+      if (nextScale === currentScale) return;
 
-    if (nextScale === currentScale) return;
+      const ratio = nextScale / currentScale;
+      const nextPan = {
+        x:
+          mouseX -
+          MAP_CENTER_X -
+          ratio * (mouseX - MAP_CENTER_X - currentPan.x),
+        y:
+          mouseY -
+          MAP_CENTER_Y -
+          ratio * (mouseY - MAP_CENTER_Y - currentPan.y),
+      };
 
-    const ratio = nextScale / currentScale;
-
-    setPan({
-      x:
-        mouseX -
-        MAP_CENTER_X -
-        ratio * (mouseX - MAP_CENTER_X - currentPan.x),
-      y:
-        mouseY -
-        MAP_CENTER_Y -
-        ratio * (mouseY - MAP_CENTER_Y - currentPan.y),
-    });
-
-    setScale(nextScale);
-  };
+      scaleRef.current = nextScale;
+      setPanImmediate(nextPan);
+      setScale(nextScale);
+    },
+    [setPanImmediate]
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -100,7 +252,6 @@ export function ParkingMap({
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
       event.stopPropagation();
-
       zoomAt(event.clientX, event.clientY, event.deltaY < 0 ? 1.2 : 0.8);
     };
 
@@ -109,7 +260,7 @@ export function ParkingMap({
     return () => {
       canvas.removeEventListener("wheel", handleWheel);
     };
-  }, []);
+  }, [zoomAt]);
 
   useEffect(() => {
     const handleWindowMouseMove = (event: MouseEvent) => {
@@ -123,7 +274,7 @@ export function ParkingMap({
       const deltaY =
         ((event.clientY - dragRef.current.startY) / rect.height) * MAP_HEIGHT;
 
-      setPan({
+      schedulePanUpdate({
         x: dragRef.current.originX + deltaX,
         y: dragRef.current.originY + deltaY,
       });
@@ -140,14 +291,35 @@ export function ParkingMap({
     return () => {
       window.removeEventListener("mousemove", handleWindowMouseMove);
       window.removeEventListener("mouseup", stopDragging);
+
+      if (panFrameRef.current !== null) {
+        window.cancelAnimationFrame(panFrameRef.current);
+      }
     };
-  }, []);
+  }, [schedulePanUpdate]);
+
+  const handleHoverSlot = useCallback(
+    (id: string | null) => {
+      startTransition(() => {
+        onSelectSlot(id);
+      });
+    },
+    [onSelectSlot]
+  );
+
+  const mapTransform = useMemo(
+    () => `
+      translate(${MAP_CENTER_X + pan.x} ${MAP_CENTER_Y + pan.y})
+      scale(${scale})
+      translate(${-MAP_CENTER_X} ${-MAP_CENTER_Y})
+    `,
+    [pan.x, pan.y, scale]
+  );
 
   const handleMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
 
     event.preventDefault();
-
     dragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -160,29 +332,26 @@ export function ParkingMap({
   };
 
   useLayoutEffect(() => {
-    if (!selectedSlot || !canvasRef.current || isDragging) {
-      setTooltipStyle(undefined);
-      return;
-    }
+    const tooltip = tooltipRef.current;
+
+    if (!tooltip) return;
+
+    tooltip.style.visibility = "hidden";
+
+    if (!selectedSlot || !canvasRef.current || isDragging) return;
 
     const slotElement = canvasRef.current.querySelector(
       `[data-slot-id="${selectedSlot.id}"]`
     ) as SVGGElement | null;
 
-    if (!slotElement) {
-      setTooltipStyle(undefined);
-      return;
-    }
+    if (!slotElement) return;
 
     const canvasRect = canvasRef.current.getBoundingClientRect();
     const slotRect = slotElement.getBoundingClientRect();
-
     const cardWidth = 290;
-    const cardHeight = 240;
     const gap = 14;
 
     const showLeft = slotRect.right - canvasRect.left > canvasRect.width * 0.72;
-
     let left = showLeft
       ? slotRect.left - canvasRect.left - cardWidth - gap
       : slotRect.right - canvasRect.left + gap;
@@ -191,23 +360,22 @@ export function ParkingMap({
       slotRect.top -
       canvasRect.top +
       slotRect.height / 2 -
-      cardHeight / 2;
+      content.detailHeight / 2;
 
     left = clamp(left, 8, canvasRect.width - cardWidth - 8);
-    top = clamp(top, 8, canvasRect.height - cardHeight - 8);
+    top = clamp(top, 8, canvasRect.height - content.detailHeight - 8);
 
-    setTooltipStyle({
-      left: `${left}px`,
-      top: `${top}px`,
-    });
-  }, [selectedSlot, scale, pan, isDragging]);
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+    tooltip.style.visibility = "visible";
+  }, [content.detailHeight, isDragging, pan.x, pan.y, scale, selectedSlot]);
 
   return (
     <section className="panel map-panel">
       <div className="panel-header">
         <div>
-          <h3>Parking map</h3>
-          <span>Live occupancy view</span>
+          <h3>{content.title}</h3>
+          <span>{content.subtitle}</span>
         </div>
       </div>
 
@@ -226,257 +394,40 @@ export function ParkingMap({
             ref={svgRef}
             className="parking-svg"
             viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
-            aria-label="Smart parking map"
+            aria-label={content.ariaLabel}
           >
-            <g
-              transform={`
-                translate(${MAP_CENTER_X + pan.x} ${MAP_CENTER_Y + pan.y})
-                scale(${scale})
-                translate(${-MAP_CENTER_X} ${-MAP_CENTER_Y})
-              `}
-            >
-              <rect x="0" y="0" width={MAP_WIDTH} height={MAP_HEIGHT} fill="#eef0f2" />
-
-              <rect x="70" y="55" width="1060" height="900" rx="22" fill="#d8d1c2" />
-
-              <rect x="288" y="150" width="110" height="460" rx="16" fill="#bbbcc0" />
-              <rect x="513" y="150" width="110" height="460" rx="16" fill="#bbbcc0" />
-              <rect x="743" y="150" width="110" height="460" rx="16" fill="#bbbcc0" />
-              <rect x="975" y="150" width="110" height="460" rx="16" fill="#bbbcc0" />
-
-              <text x="200" y="130" className="map-label">
-                Zone A
-              </text>
-              <text x="440" y="130" className="map-label">
-                Zone B
-              </text>
-              <text x="670" y="130" className="map-label">
-                Zone C
-              </text>
-              <text x="900" y="130" className="map-label">
-                Zone D
-              </text>
-
-              {/* Entry box - top left */}
-              <g>
-                <rect
-                  x="80"
-                  y="78"
-                  width="110"
-                  height="44"
-                  rx="12"
-                  fill="#fff700"
-                  stroke="#64748b"
-                  strokeWidth="1.4"
-                />
-                <text
-                  x="135"
-                  y="105"
-                  textAnchor="middle"
-                  fontSize="16"
-                  fontWeight="700"
-                  fill="#334155"
-                >
-                  Entry/Exit
-                </text>
-              </g>
+            <g transform={mapTransform}>
+              <StaticMapLayer />
 
               <g transform={`translate(0 ${SLOT_VERTICAL_OFFSET})`}>
-                <g aria-hidden="true">
-                  <rect
-                    x="326"
-                    y="650"
-                    width="558"
-                    height="232"
-                    rx="18"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="4"
-                    opacity="0.9"
+                {slots.map((slot) => (
+                  <ParkingSlotGroup
+                    key={slot.id}
+                    slot={slot}
+                    isSelected={slot.id === selectedSlotId}
+                    isDragging={isDragging}
+                    onHoverSlot={handleHoverSlot}
                   />
-
-                  <rect
-                    x="344"
-                    y="667"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-                  <rect
-                    x="454"
-                    y="667"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-                  <rect
-                    x="564"
-                    y="667"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-                  <rect
-                    x="674"
-                    y="667"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-                  <rect
-                    x="784"
-                    y="667"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-
-                  <rect
-                    x="344"
-                    y="789"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-                  <rect
-                    x="454"
-                    y="789"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-                  <rect
-                    x="564"
-                    y="789"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-                  <rect
-                    x="674"
-                    y="789"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-                  <rect
-                    x="784"
-                    y="789"
-                    width="72"
-                    height="48"
-                    rx="6"
-                    fill="none"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                  />
-
-                  <line
-                    x1="344"
-                    y1="752"
-                    x2="856"
-                    y2="752"
-                    stroke="#f8fafc"
-                    strokeWidth="3"
-                    strokeDasharray="24 14"
-                    opacity="0.95"
-                  />
-                </g>
-
-                {slots.map((slot) => {
-                  const isSelected = slot.id === selectedSlot?.id;
-
-                  return (
-                    <g
-                      key={slot.id}
-                      data-slot-id={slot.id}
-                      className={`slot-group ${isSelected ? "is-selected" : ""}`}
-                      transform={`translate(${slot.x} ${slot.y})`}
-                      onMouseEnter={() => {
-                        if (!isDragging) onSelectSlot(slot.id);
-                      }}
-                      onMouseLeave={() => {
-                        if (!isDragging) onSelectSlot(null);
-                      }}
-                    >
-                      <rect
-                        x="0"
-                        y="0"
-                        rx="4"
-                        ry="4"
-                        width={slot.width}
-                        height={slot.height}
-                        fill={isSelected ? "#d9ebff" : "#b9cde0"}
-                        stroke={isSelected ? "#2d4d6e" : "#6f8aa3"}
-                        strokeWidth={isSelected ? 1.8 : 1}
-                      />
-
-                      <circle
-                        cx={slot.width - 7}
-                        cy={slot.height / 2}
-                        r="4.8"
-                        fill={markerPalette[slot.marker]}
-                        stroke="#475569"
-                        strokeWidth="0.6"
-                      />
-
-                      <text x="5" y={slot.height / 2 + 3.1} className="slot-code">
-                        {slot.code}
-                      </text>
-                    </g>
-                  );
-                })}
+                ))}
               </g>
             </g>
           </svg>
 
-          {selectedSlot && tooltipStyle ? (
-            <SlotDetailCard slot={selectedSlot} style={tooltipStyle} />
+          {selectedSlot ? (
+            mode === "admin" ? (
+              <SlotDetailCard ref={tooltipRef} slot={selectedSlot} />
+            ) : (
+              <UserSlotDetailCard ref={tooltipRef} slot={selectedSlot} />
+            )
           ) : null}
 
           <div className="map-legend">
-            <div className="legend-item">
-              <span className="legend-dot green" />
-              available
-            </div>
-            <div className="legend-item">
-              <span className="legend-dot yellow" />
-              &lt; 15 min
-            </div>
-            <div className="legend-item">
-              <span className="legend-dot orange" />
-              15 min - 3 hours
-            </div>
-            <div className="legend-item">
-              <span className="legend-dot red" />
-              &gt; 3 hours
-            </div>
+            {content.legend.map((item) => (
+              <div className="legend-item" key={`${mode}-${item.color}-${item.label}`}>
+                <span className={`legend-dot ${item.color}`} />
+                {item.label}
+              </div>
+            ))}
           </div>
         </div>
       </div>

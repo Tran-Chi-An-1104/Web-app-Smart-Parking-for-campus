@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { ParkingSummary } from "../types/parking";
 
 interface OccupancyGaugeProps {
@@ -6,13 +7,13 @@ interface OccupancyGaugeProps {
 
 export function OccupancyGauge({ summary }: OccupancyGaugeProps) {
   const gaugeAngle = `${(summary.occupied / Math.max(summary.total, 1)) * 180}deg`;
+  const gaugeStyle = {
+    "--gauge-angle": gaugeAngle,
+  } as CSSProperties;
 
   return (
     <div className="occupancy-layout">
-      <div
-        className="gauge-wrap"
-        style={{ ["--gauge-angle" as any]: gaugeAngle }}
-      >
+      <div className="gauge-wrap" style={gaugeStyle}>
         <div className="gauge-half">
           <div className="gauge-ring" />
         </div>
