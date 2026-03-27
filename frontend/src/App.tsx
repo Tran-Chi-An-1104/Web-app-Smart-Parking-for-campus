@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useEffect } from "react";
+import { Suspense, lazy, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import "./App.css";
 
@@ -8,43 +8,55 @@ const UserDashboard = lazy(() => import("./pages/UserDashboard"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 
 type AppView = "admin" | "user";
+type UserRole = "admin" | "user";
 
 function App() {
   const navigate = useNavigate();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const initialUserRole = (() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem("user");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { role?: UserRole };
+      return parsed?.role === "admin" ? "admin" : "user";
+    } catch {
+      return null;
+    }
+  })();
+
+  const [isAuthenticated, setIsAuthenticated] = useState(!!initialUserRole);
+  const [userRole, setUserRole] = useState<UserRole | null>(initialUserRole);
   const [isSignedOut, setIsSignedOut] = useState(() => {
     return sessionStorage.getItem(SIGNED_OUT_STORAGE_KEY) === "true";
   });
-
-  useEffect(() => {
-    // Check if user is logged in
-    const user = localStorage.getItem("user");
-    if (user) {
-      setIsAuthenticated(true);
-    }
-  }, []);
 
   const handleSignOut = () => {
     localStorage.clear();
     sessionStorage.clear();
     sessionStorage.setItem(SIGNED_OUT_STORAGE_KEY, "true");
+    setUserRole(null);
     setIsAuthenticated(false);
     setIsSignedOut(true);
     navigate("/login");
   };
 
-  const handleLogin = () => {
+  const handleLogin = (role: UserRole) => {
     setIsAuthenticated(true);
+    setUserRole(role);
     sessionStorage.removeItem(SIGNED_OUT_STORAGE_KEY);
     setIsSignedOut(false);
   };
 
   const handleResumeSession = () => {
-    if (localStorage.getItem("user")) {
+    const user = localStorage.getItem("user");
+    if (user) {
+      const parsed = JSON.parse(user) as { role?: UserRole };
+      const role = parsed?.role === "admin" ? "admin" : "user";
       setIsAuthenticated(true);
+      setUserRole(role);
       setIsSignedOut(false);
       sessionStorage.removeItem(SIGNED_OUT_STORAGE_KEY);
-      navigate("/admin");
+      navigate(role === "admin" ? "/admin" : "/user");
     } else {
       navigate("/login");
     }
@@ -67,18 +79,20 @@ function App() {
           path="/login"
           element={
             isAuthenticated ? (
-              <Navigate to="/user" replace />
+              <Navigate to={userRole === "admin" ? "/admin" : "/user"} replace />
             ) : (
               <LoginPage onLogin={handleLogin} />
             )
           }
         />
-        <Route path="/" element={<Navigate to={isAuthenticated ? "/user" : "/login"} replace />} />
+        <Route path="/" element={<Navigate to={isAuthenticated ? (userRole === "admin" ? "/admin" : "/user") : "/login"} replace />} />
         <Route
           path="/admin"
           element={
             !isAuthenticated ? (
               <Navigate to="/login" replace />
+            ) : userRole !== "admin" ? (
+              <Navigate to="/user" replace />
             ) : isSignedOut ? (
               <main className="signed-out-shell">
                 <section className="signed-out-card">
@@ -96,7 +110,7 @@ function App() {
                       type="button"
                       onClick={handleResumeSession}
                     >
-                      Return to admin dashboard
+                      Return to dashboard
                     </button>
                     <button
                       className="signed-out-button secondary"
@@ -122,11 +136,11 @@ function App() {
             !isAuthenticated ? (
               <Navigate to="/login" replace />
             ) : (
-              <UserDashboard onViewChange={handleViewChange} />
+              <UserDashboard onViewChange={handleViewChange} onSignOut={handleSignOut} />
             )
           }
         />
-        <Route path="*" element={<Navigate to={isAuthenticated ? "/user" : "/login"} replace />} />
+        <Route path="*" element={<Navigate to={isAuthenticated ? (userRole === "admin" ? "/admin" : "/user") : "/login"} replace />} />
       </Routes>
     </Suspense>
   );

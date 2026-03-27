@@ -5,9 +5,10 @@ import { userParkingSlots } from "../services/parkingService";
 
 interface UserDashboardProps {
   onViewChange: (view: "admin" | "user") => void;
+  onSignOut: () => void;
 }
 
-export default function UserDashboard({ onViewChange }: UserDashboardProps) {
+export default function UserDashboard({ onViewChange, onSignOut }: UserDashboardProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const selectedSlot =
     userParkingSlots.find((slot) => slot.id === selectedSlotId) ?? null;
@@ -15,7 +16,7 @@ export default function UserDashboard({ onViewChange }: UserDashboardProps) {
   return (
     <div className="app-shell">
       <div className="page-shell">
-        <FilterBar viewMode="user" onViewChange={onViewChange} />
+        <FilterBar viewMode="user" onViewChange={onViewChange} onSignOut={onSignOut} />
 
         <main className="page-content" aria-labelledby="user-page-title">
           <header className="page-header">

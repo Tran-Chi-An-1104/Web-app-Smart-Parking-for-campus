@@ -16,6 +16,7 @@ type AdminFilterBarProps = {
 type UserFilterBarProps = {
   viewMode: "user";
   onViewChange: (view: ViewMode) => void;
+  onSignOut: () => void;
 };
 
 type FilterBarProps = AdminFilterBarProps | UserFilterBarProps;
@@ -100,6 +101,12 @@ export function FilterBar(props: FilterBarProps) {
         ) : null}
 
         <div className="version-pill">version 1.0</div>
+
+        {!isAdminView ? (
+          <button className="signout-button" type="button" onClick={props.onSignOut}>
+            Sign out
+          </button>
+        ) : null}
 
         {isAdminView ? (
           <div className="settings-menu" ref={settingsRef}>

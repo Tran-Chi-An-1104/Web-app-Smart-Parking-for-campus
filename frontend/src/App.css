@@ -159,6 +159,22 @@ select {
   background: #eef7dc;
 }
 
+.signout-button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.signout-button:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
 .page-content {
   padding: 18px 22px 24px;
 }
