@@ -29,22 +29,19 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#f3f9e8] to-[#ececec] flex items-center justify-center p-6">
-      <div className="max-w-[480px] w-full bg-white/95 rounded-[20px] shadow-[0_20px_44px_rgba(15,23,42,0.12)] p-10 border border-white">
+    <div className="relative min-h-screen bg-gradient-to-b from-[#f3f9e8] to-[#ececec] flex items-center justify-center p-6 overflow-hidden">
+      <img
+        src="/favicon-mu-48.png"
+        alt=""
+        className="absolute right-[-10%] sm:right-[-5%] top-1/2 -translate-y-1/2 w-[60vw] sm:w-[50vw] max-w-[600px] object-contain opacity-100 blur-[8px] pointer-events-none select-none"
+      />
+      <div className="relative z-10 max-w-[480px] w-full bg-white/95 backdrop-blur-sm rounded-[20px] shadow-[0_20px_44px_rgba(15,23,42,0.12)] p-10 border border-white">
         {/* Header */}
-        <div className="text-center mb-8">
-          <p className="text-[#6b8c2d] text-xs font-bold tracking-[0.12em] uppercase mb-3">
-            Authentication
-          </p>
-          <div className="w-16 h-16 bg-[#81b92d] rounded-2xl mx-auto mb-5 flex items-center justify-center shadow-md">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-          <h1 className="text-[28px] font-bold text-[#253525] mb-2 leading-tight">
+        <div className="text-center mb-10">
+          <h1 className="text-[36px] sm:text-[42px] font-extrabold text-[#253525] mb-3 tracking-tight">
             HCMUT Parking
           </h1>
-          <p className="text-[#556070] text-[15px]">
+          <p className="text-[#556070] text-[16px] sm:text-[18px] font-medium">
             Smart Parking Management System
           </p>
         </div>
@@ -54,8 +51,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <div className="grid gap-3 sm:grid-cols-2">
             <label
               className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-colors ${role === "user"
-                  ? "border-[#81b92d] bg-[#f3f9e8]/50"
-                  : "border-gray-100 hover:border-gray-200 hover:bg-gray-50 bg-white"
+                ? "border-[#81b92d] bg-[#f3f9e8]/50"
+                : "border-gray-100 hover:border-gray-200 hover:bg-gray-50 bg-white"
                 }`}
             >
               <input
@@ -72,8 +69,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </label>
             <label
               className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-colors ${role === "admin"
-                  ? "border-[#81b92d] bg-[#f3f9e8]/50"
-                  : "border-gray-100 hover:border-gray-200 hover:bg-gray-50 bg-white"
+                ? "border-[#81b92d] bg-[#f3f9e8]/50"
+                : "border-gray-100 hover:border-gray-200 hover:bg-gray-50 bg-white"
                 }`}
             >
               <input
